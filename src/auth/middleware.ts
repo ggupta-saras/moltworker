@@ -42,6 +42,42 @@ export function extractJWT(c: Context<AppEnv>): string | null {
 export function createAccessMiddleware(options: AccessMiddlewareOptions) {
   const { type, redirectOnMissing = false } = options;
 
+  const buildLoginUrl = (
+    c: Context<AppEnv>,
+    teamDomain: string,
+    expectedAud: string,
+  ): string => {
+    let hostname = c.req.header('host') ?? '';
+    let pathname = '/';
+    let search = '';
+    const rawUrl = c.req.url;
+
+    if (rawUrl) {
+      try {
+        const requestUrl = new URL(rawUrl);
+        hostname = requestUrl.host || hostname;
+        pathname = requestUrl.pathname;
+        search = requestUrl.search;
+      } catch {
+        if (hostname) {
+          try {
+            const requestUrl = new URL(rawUrl, `https://${hostname}`);
+            pathname = requestUrl.pathname;
+            search = requestUrl.search;
+          } catch {
+            // Ignore invalid URL input; fall back to defaults.
+          }
+        }
+      }
+    }
+
+    const redirectPath = `${pathname}${search}`;
+    const safeHost = hostname || 'localhost';
+    return `https://${teamDomain}/cdn-cgi/access/login/${safeHost}?kid=${expectedAud}&redirect_url=${encodeURIComponent(
+      redirectPath,
+    )}`;
+  };
+
   return async (c: Context<AppEnv>, next: Next) => {
     // Skip auth in dev mode
     if (isDevMode(c.env)) {
@@ -82,10 +118,7 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
 
     if (!jwt) {
       if (type === 'html') {
-        const requestUrl = new URL(c.req.url);
-        const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(
-          requestUrl.pathname + requestUrl.search,
-        )}`;
+        const loginUrl = buildLoginUrl(c, teamDomain, expectedAud);
 
         if (redirectOnMissing) {
           // Hard redirect to Access login
@@ -134,10 +167,7 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
           401,
         );
       } else {
-        const requestUrl = new URL(c.req.url);
-        const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(
-          requestUrl.pathname + requestUrl.search,
-        )}`;
+        const loginUrl = buildLoginUrl(c, teamDomain, expectedAud);
 
         return c.html(
           `

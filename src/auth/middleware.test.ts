@@ -118,6 +118,7 @@ describe('createAccessMiddleware', () => {
     env?: Partial<MoltbotEnv>;
     jwtHeader?: string;
     cookies?: string;
+    url?: string;
   }): { c: Context<AppEnv>; jsonMock: ReturnType<typeof vi.fn>; htmlMock: ReturnType<typeof vi.fn>; redirectMock: ReturnType<typeof vi.fn>; setMock: ReturnType<typeof vi.fn> } {
     const headers = new Headers();
     if (options.jwtHeader) {
@@ -136,6 +137,7 @@ describe('createAccessMiddleware', () => {
       req: {
         header: (name: string) => headers.get(name),
         raw: { headers },
+        url: options.url,
       },
       env: createMockEnv(options.env),
       json: jsonMock,
@@ -220,7 +222,8 @@ describe('createAccessMiddleware', () => {
 
   it('redirects when JWT is missing and redirectOnMissing is true', async () => {
     const { c, redirectMock } = createFullMockContext({ 
-      env: { CF_ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com', CF_ACCESS_AUD: 'aud123' } 
+      env: { CF_ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com', CF_ACCESS_AUD: 'aud123' },
+      url: 'https://admin.example.com/_admin',
     });
     const middleware = createAccessMiddleware({ type: 'html', redirectOnMissing: true });
     const next = vi.fn();
@@ -228,6 +231,9 @@ describe('createAccessMiddleware', () => {
     await middleware(c, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(redirectMock).toHaveBeenCalledWith('https://team.cloudflareaccess.com', 302);
+    expect(redirectMock).toHaveBeenCalledWith(
+      'https://team.cloudflareaccess.com/cdn-cgi/access/login/admin.example.com?kid=aud123&redirect_url=%2F_admin',
+      302
+    );
   });
 });

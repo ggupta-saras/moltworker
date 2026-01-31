@@ -6,7 +6,7 @@
 # 3. Starts a background sync to backup config to R2
 # 4. Starts the gateway
 
-set -e
+set -euo pipefail
 
 # Check if clawdbot gateway is already running - bail early if so
 # Note: CLI is still named "clawdbot" until upstream renames it
@@ -277,17 +277,30 @@ EOFNODE
 echo "Starting Moltbot Gateway..."
 echo "Gateway will be available on port 18789"
 
+echo "Checking clawdbot binary..."
+if ! command -v clawdbot >/dev/null 2>&1; then
+    echo "ERROR: clawdbot not found in PATH." >&2
+    echo "PATH: $PATH" >&2
+    exit 126
+fi
+CLAWDBOT_BIN=$(command -v clawdbot)
+echo "clawdbot path: $CLAWDBOT_BIN"
+ls -l "$CLAWDBOT_BIN" || true
+clawdbot --version
+
 # Clean up stale lock files
 rm -f /tmp/clawdbot-gateway.lock 2>/dev/null || true
 rm -f "$CONFIG_DIR/gateway.lock" 2>/dev/null || true
 
-BIND_MODE="lan"
+BIND_MODE="${CLAWDBOT_BIND_MODE:-lan}"
 echo "Dev mode: ${CLAWDBOT_DEV_MODE:-false}, Bind mode: $BIND_MODE"
 
-if [ -n "$CLAWDBOT_GATEWAY_TOKEN" ]; then
+if [ -n "${CLAWDBOT_GATEWAY_TOKEN:-}" ]; then
     echo "Starting gateway with token auth..."
+    echo "Gateway command: clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind $BIND_MODE --token [redacted]"
     exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE" --token "$CLAWDBOT_GATEWAY_TOKEN"
 else
     echo "Starting gateway with device pairing (no token)..."
+    echo "Gateway command: clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind $BIND_MODE"
     exec clawdbot gateway --port 18789 --verbose --allow-unconfigured --bind "$BIND_MODE"
 fi

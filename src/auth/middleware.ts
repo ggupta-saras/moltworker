@@ -24,9 +24,10 @@ export function isDevMode(env: MoltbotEnv): boolean {
  */
 export function extractJWT(c: Context<AppEnv>): string | null {
   const jwtHeader = c.req.header('CF-Access-JWT-Assertion');
-  const jwtCookie = c.req.raw.headers.get('Cookie')
+  const jwtCookie = c.req.raw.headers
+    .get('Cookie')
     ?.split(';')
-    .find(cookie => cookie.trim().startsWith('CF_Authorization='))
+    .find((cookie) => cookie.trim().startsWith('CF_Authorization='))
     ?.split('=')[1];
 
   return jwtHeader || jwtCookie || null;
@@ -34,7 +35,7 @@ export function extractJWT(c: Context<AppEnv>): string | null {
 
 /**
  * Create a Cloudflare Access authentication middleware
- * 
+ *
  * @param options - Middleware options
  * @returns Hono middleware function
  */
@@ -54,19 +55,25 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
     // Check if CF Access is configured
     if (!teamDomain || !expectedAud) {
       if (type === 'json') {
-        return c.json({
-          error: 'Cloudflare Access not configured',
-          hint: 'Set CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD environment variables',
-        }, 500);
+        return c.json(
+          {
+            error: 'Cloudflare Access not configured',
+            hint: 'Set CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD environment variables',
+          },
+          500,
+        );
       } else {
-        return c.html(`
+        return c.html(
+          `
           <html>
             <body>
               <h1>Admin UI Not Configured</h1>
               <p>Set CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD environment variables.</p>
             </body>
           </html>
-        `, 500);
+        `,
+          500,
+        );
       }
     }
 
@@ -74,35 +81,40 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
     const jwt = extractJWT(c);
 
     if (!jwt) {
-      if (type === 'html' && redirectOnMissing) {
-            const requestUrl = new URL(c.req.url);
-    const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(requestUrl.pathname + requestUrl.search)}`;
-    return c.redirect(loginUrl, 302);
-      }
-      
-      if (type === 'json') {
-        return c.json({
-          error: 'Unauthorized',
-          hint: 'Missing Cloudflare Access JWT. Ensure this route is protected by Cloudflare Access.',
-        }, 401);
-      } else {
-        return c.html(`
+      if (type === 'html') {
+        const requestUrl = new URL(c.req.url);
+        const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(
+          requestUrl.pathname + requestUrl.search,
+        )}`;
+
+        if (redirectOnMissing) {
+          // Hard redirect to Access login
+          return c.redirect(loginUrl, 302);
+        }
+
+        // Show an Unauthorized page with a Login link
+        return c.html(
+          `
           <html>
             <body>
               <h1>Unauthorized</h1>
               <p>Missing Cloudflare Access token.</p>
-                const requestUrl = new URL(c.req.url);
-  const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(requestUrl.pathname + requestUrl.search)}`;
-  return c.html(`
-    <html>
-    <body>
-      <h1>Unauthorized</h1>
-      <p>Missing Cloudflare Access token.</p>
-      <a href="${loginUrl}">Login</a>
+              <a href="${loginUrl}">Login</a>
             </body>
           </html>
-        `, 401);
+        `,
+          401,
+        );
       }
+
+      // JSON response for APIs
+      return c.json(
+        {
+          error: 'Unauthorized',
+          hint: 'Missing Cloudflare Access JWT. Ensure this route is protected by Cloudflare Access.',
+        },
+        401,
+      );
     }
 
     // Verify JWT
@@ -112,30 +124,33 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
       await next();
     } catch (err) {
       console.error('Access JWT verification failed:', err);
-      
+
       if (type === 'json') {
-        return c.json({
-          error: 'Unauthorized',
-          details: err instanceof Error ? err.message : 'JWT verification failed',
-        }, 401);
+        return c.json(
+          {
+            error: 'Unauthorized',
+            details: err instanceof Error ? err.message : 'JWT verification failed',
+          },
+          401,
+        );
       } else {
-        return c.html(`
+        const requestUrl = new URL(c.req.url);
+        const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(
+          requestUrl.pathname + requestUrl.search,
+        )}`;
+
+        return c.html(
+          `
           <html>
             <body>
               <h1>Unauthorized</h1>
               <p>Your Cloudflare Access session is invalid or expired.</p>
-                const requestUrl = new URL(c.req.url);
-  const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(requestUrl.pathname + requestUrl.search)}`;
-  return c.html(`
-    <html>
-    <body>
-      <h1>Unauthorized</h1>
-      <p>Your Cloudflare Access session is invalid or expired.</p>
-      <a href="${loginUrl}">Login again</a>
-
+              <a href="${loginUrl}">Login again</a>
             </body>
           </html>
-        `, 401);
+        `,
+          401,
+        );
       }
     }
   };

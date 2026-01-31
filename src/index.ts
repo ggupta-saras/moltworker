@@ -20,7 +20,7 @@
  * - SLACK_BOT_TOKEN + SLACK_APP_TOKEN: Slack tokens
  */
 
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { getSandbox, Sandbox, type SandboxOptions } from '@cloudflare/sandbox';
 
 import type { AppEnv, MoltbotEnv } from './types';
@@ -52,19 +52,25 @@ export { Sandbox };
  * Validate required environment variables.
  * Returns an array of missing variable descriptions, or empty array if all are set.
  */
-function validateRequiredEnv(env: MoltbotEnv): string[] {
+function validateRequiredEnv(
+  env: MoltbotEnv,
+  options: { requireAccess?: boolean } = {},
+): string[] {
   const missing: string[] = [];
+  const requireAccess = options.requireAccess ?? true;
 
   if (!env.MOLTBOT_GATEWAY_TOKEN) {
     missing.push('MOLTBOT_GATEWAY_TOKEN');
   }
 
-  if (!env.CF_ACCESS_TEAM_DOMAIN) {
-    missing.push('CF_ACCESS_TEAM_DOMAIN');
-  }
+  if (requireAccess) {
+    if (!env.CF_ACCESS_TEAM_DOMAIN) {
+      missing.push('CF_ACCESS_TEAM_DOMAIN');
+    }
 
-  if (!env.CF_ACCESS_AUD) {
-    missing.push('CF_ACCESS_AUD');
+    if (!env.CF_ACCESS_AUD) {
+      missing.push('CF_ACCESS_AUD');
+    }
   }
 
   // Check for AI Gateway or direct Anthropic configuration
@@ -79,6 +85,14 @@ function validateRequiredEnv(env: MoltbotEnv): string[] {
   }
 
   return missing;
+}
+
+function isAccessProtectedPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/_admin') ||
+    pathname.startsWith('/debug')
+  );
 }
 
 /**
@@ -158,7 +172,8 @@ app.use('*', async (c, next) => {
     return next();
   }
   
-  const missingVars = validateRequiredEnv(c.env);
+  const requireAccess = isAccessProtectedPath(url.pathname);
+  const missingVars = validateRequiredEnv(c.env, { requireAccess });
   if (missingVars.length > 0) {
     console.error('[CONFIG] Missing required environment variables:', missingVars.join(', '));
     
@@ -182,16 +197,22 @@ app.use('*', async (c, next) => {
 });
 
 // Middleware: Cloudflare Access authentication for protected routes
-app.use('*', async (c, next) => {
-  // Determine response type based on Accept header
+const accessMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const acceptsHtml = c.req.header('Accept')?.includes('text/html');
-  const middleware = createAccessMiddleware({ 
+  const middleware = createAccessMiddleware({
     type: acceptsHtml ? 'html' : 'json',
-    redirectOnMissing: acceptsHtml 
+    redirectOnMissing: acceptsHtml,
   });
-  
+
   return middleware(c, next);
-});
+};
+
+app.use('/api', accessMiddleware);
+app.use('/api/*', accessMiddleware);
+app.use('/_admin', accessMiddleware);
+app.use('/_admin/*', accessMiddleware);
+app.use('/debug', accessMiddleware);
+app.use('/debug/*', accessMiddleware);
 
 // Mount API routes (protected by Cloudflare Access)
 app.route('/api', api);

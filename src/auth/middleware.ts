@@ -75,7 +75,9 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
 
     if (!jwt) {
       if (type === 'html' && redirectOnMissing) {
-        return c.redirect(`https://${teamDomain}`, 302);
+            const requestUrl = new URL(c.req.url);
+    const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(requestUrl.pathname + requestUrl.search)}`;
+    return c.redirect(loginUrl, 302);
       }
       
       if (type === 'json') {
@@ -89,7 +91,14 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
             <body>
               <h1>Unauthorized</h1>
               <p>Missing Cloudflare Access token.</p>
-              <a href="https://${teamDomain}">Login</a>
+                const requestUrl = new URL(c.req.url);
+  const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(requestUrl.pathname + requestUrl.search)}`;
+  return c.html(`
+    <html>
+    <body>
+      <h1>Unauthorized</h1>
+      <p>Missing Cloudflare Access token.</p>
+      <a href="${loginUrl}">Login</a>
             </body>
           </html>
         `, 401);
@@ -115,7 +124,15 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
             <body>
               <h1>Unauthorized</h1>
               <p>Your Cloudflare Access session is invalid or expired.</p>
-              <a href="https://${teamDomain}">Login again</a>
+                const requestUrl = new URL(c.req.url);
+  const loginUrl = `https://${teamDomain}/cdn-cgi/access/login/${requestUrl.host}?kid=${expectedAud}&redirect_url=${encodeURIComponent(requestUrl.pathname + requestUrl.search)}`;
+  return c.html(`
+    <html>
+    <body>
+      <h1>Unauthorized</h1>
+      <p>Your Cloudflare Access session is invalid or expired.</p>
+      <a href="${loginUrl}">Login again</a>
+
             </body>
           </html>
         `, 401);
